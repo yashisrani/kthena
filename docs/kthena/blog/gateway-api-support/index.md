@@ -89,7 +89,7 @@ This flexibility allows users to select the approach that best fits their specif
 
 Before enabling Gateway API support, ensure you have:
 
-- Kubernetes cluster with Kthena installed (see [Installation Guide](../../docs/user-guide/getting-started/installation.md))
+- Kubernetes cluster with Kthena installed (see [Installation Guide](../../docs/getting-started/installation.md))
 - Basic understanding of Kubernetes Gateway API concepts
 - `kubectl` configured to access your cluster
 
@@ -164,9 +164,10 @@ kubectl wait --for=condition=ready pod -l app=deepseek-r1-7b --timeout=300s
 
 ### Step 2: Create a New Gateway
 
-Create a new Gateway listening on a different port:
+Create and apply a new Gateway listening on a different port:
 
-```yaml
+```bash
+cat <<EOF | kubectl apply -f -
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -178,12 +179,7 @@ spec:
   - name: http
     port: 8081  # Using a different port
     protocol: HTTP
-```
-
-Apply the configuration:
-
-```bash
-kubectl apply -f gateway-8081.yaml
+EOF
 
 # Verify Gateway status
 kubectl get gateway kthena-gateway-8081 -n default
@@ -213,9 +209,10 @@ spec:
 
 ### Step 3: Create ModelRoutes Bound to Different Gateways
 
-Create a ModelRoute bound to the default Gateway:
+Create and apply a ModelRoute bound to the default Gateway:
 
-```yaml
+```bash
+cat <<EOF | kubectl apply -f -
 apiVersion: networking.serving.volcano.sh/v1alpha1
 kind: ModelRoute
 metadata:
@@ -231,11 +228,13 @@ spec:
   - name: "default"
     targetModels:
     - modelServerName: "deepseek-r1-1-5b"  # Backend ModelServer
+EOF
 ```
 
-Create another ModelRoute using the **same modelName** but bound to the new Gateway:
+Create and apply another ModelRoute using the **same modelName** but bound to the new Gateway:
 
-```yaml
+```bash
+cat <<EOF | kubectl apply -f -
 apiVersion: networking.serving.volcano.sh/v1alpha1
 kind: ModelRoute
 metadata:
@@ -251,13 +250,7 @@ spec:
   - name: "default"
     targetModels:
     - modelServerName: "deepseek-r1-7b"  # Using a different backend
-```
-
-Apply both configurations:
-
-```bash
-kubectl apply -f deepseek-default-route.yaml
-kubectl apply -f deepseek-route-8081.yaml
+EOF
 ```
 
 **Note**: When Gateway API is enabled, the `parentRefs` field is required. ModelRoutes without `parentRefs` will be ignored and will not route any traffic.
@@ -332,7 +325,7 @@ kubectl apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extens
 
 ### Step 2: Deploy Sample Model Server
 
-Deploy a model that will serve as the backend for the Gateway Inference Extension. Follow the [Quick Start](../../docs/user-guide/getting-started/quick-start.md) guide to deploy a model in the `default` namespace and ensure it's in `Active` state.
+Deploy a model that will serve as the backend for the Gateway Inference Extension. Follow the [Quick Start](../../docs/getting-started/quick-start.md) guide to deploy a model in the `default` namespace and ensure it's in `Active` state.
 
 After deployment, identify the labels of your model pods:
 
