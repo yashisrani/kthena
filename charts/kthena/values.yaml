@@ -76,19 +76,19 @@ networking:
     gatewayAPI:
       # -- Enable Gateway API related features.
       enabled: false
-      # -- Enable Gateway API Inference Extension features.
-      # -- Requires gatewayAPI.enabled to be true.
+      # -- Enable Gateway API Inference Extension features.<br/>
+      # Requires `gatewayAPI.enabled` to be true.
       inferenceExtension: false
 
 global:
-  # -- Certificate Management Mode.
-  #  Three mutually exclusive options for managing TLS certificates:
-  #  - `auto`: Webhook servers generate self-signed certificates automatically.
-  #  - `cert-manager`: Use cert-manager to generate and manage certificates (requires cert-manager installation).
+  # -- Certificate Management Mode.<br/>
+  #  Three mutually exclusive options for managing TLS certificates:<br/>
+  #  - `auto`: Webhook servers generate self-signed certificates automatically.<br/>
+  #  - `cert-manager`: Use cert-manager to generate and manage certificates (requires cert-manager installation).<br/>
   #  - `manual`: Provide your own certificates via caBundle.
   certManagementMode: auto
   webhook:
-    # -- CA bundle for webhook server certificates (base64-encoded).
-    # -- This is ONLY required when `certManagementMode` is set to "manual".
-    # -- You can generate it with: `cat /path/to/your/ca.crt | base64 | tr -d '\n'`
+    # -- CA bundle for webhook server certificates (base64-encoded).<br/>
+    # This is ONLY required when `certManagementMode` is set to "manual".<br/>
+    # You can generate it with: `cat /path/to/your/ca.crt | base64 | tr -d '\n'`<br/>
     caBundle: ""

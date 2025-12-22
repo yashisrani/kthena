@@ -8,15 +8,15 @@ A Helm chart for deploying Kthena
 
 | Repository | Name | Version |
 |------------|------|---------|
-|  | networking | 1.0.0 |
-|  | workload | 1.0.0 |
+| https://ghcr.io/volcano-sh/charts/kthena | networking | 1.0.0 |
+| https://ghcr.io/volcano-sh/charts/kthena | workload | 1.0.0 |
 
 ## Values
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| global.certManagementMode | string | `"auto"` | Certificate Management Mode.  Three mutually exclusive options for managing TLS certificates:  - `auto`: Webhook servers generate self-signed certificates automatically.  - `cert-manager`: Use cert-manager to generate and manage certificates (requires cert-manager installation).  - `manual`: Provide your own certificates via caBundle. |
-| global.webhook.caBundle | string | `""` | You can generate it with: `cat /path/to/your/ca.crt | base64 | tr -d '\n'` |
+| global.certManagementMode | string | `"auto"` | Certificate Management Mode.<br/>  Three mutually exclusive options for managing TLS certificates:<br/>  - `auto`: Webhook servers generate self-signed certificates automatically.<br/>  - `cert-manager`: Use cert-manager to generate and manage certificates (requires cert-manager installation).<br/>  - `manual`: Provide your own certificates via caBundle. |
+| global.webhook.caBundle | string | `""` | CA bundle for webhook server certificates (base64-encoded).<br/> This is ONLY required when `certManagementMode` is set to "manual".<br/> You can generate it with: `cat /path/to/your/ca.crt | base64 | tr -d '\n'`<br/> |
 | networking.enabled | bool | `true` | Enable the networking subchart. |
 | networking.kthenaRouter.enabled | bool | `true` | Enable Kthena Router. |
 | networking.kthenaRouter.fairness.enabled | bool | `false` | Enable fairness scheduling. |
@@ -24,7 +24,7 @@ A Helm chart for deploying Kthena
 | networking.kthenaRouter.fairness.outputTokenWeight | float | `2` | Weight multiplier for output tokens. |
 | networking.kthenaRouter.fairness.windowSize | string | `"1h"` | Sliding window duration for token usage tracking. |
 | networking.kthenaRouter.gatewayAPI.enabled | bool | `false` | Enable Gateway API related features. |
-| networking.kthenaRouter.gatewayAPI.inferenceExtension | bool | `false` | Requires gatewayAPI.enabled to be true. |
+| networking.kthenaRouter.gatewayAPI.inferenceExtension | bool | `false` | Enable Gateway API Inference Extension features.<br/> Requires `gatewayAPI.enabled` to be true. |
 | networking.kthenaRouter.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy for Kthena Router. |
 | networking.kthenaRouter.image.repository | string | `"ghcr.io/volcano-sh/kthena-router"` | Image repository for Kthena Router. |
 | networking.kthenaRouter.image.tag | string | `"latest"` | Image tag for Kthena Router. |

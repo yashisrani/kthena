@@ -110,6 +110,4 @@ code:not([class*="language-"]) {
 
 .markdown table {
     display: table;        /* Restore standard table behavior */
-    width: 100%;           /* Force table to fill the container width */
-    table-layout: fixed;   /* Fix column widths so text is forced to wrap */
 }
