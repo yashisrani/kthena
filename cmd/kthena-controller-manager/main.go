@@ -53,7 +53,7 @@ func main() {
 	var enableWebhook bool
 	var wc webhookConfig
 	var cc controller.Config
-	var controllers string
+	var controllers []string
 	// Initialize klog flags
 	klog.InitFlags(nil)
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
@@ -69,8 +69,8 @@ func main() {
 	pflag.BoolVar(&cc.EnableLeaderElection, "leader-elect", false, "Enable leader election for controller. "+
 		"Enabling this will ensure there is only one active controller. Default is false.")
 	pflag.IntVar(&cc.Workers, "workers", 5, "number of workers to run. Default is 5")
-	pflag.StringVar(&controllers, "controllers", "*", "Comma-separated list of controllers to enable. Available controllers: `modelserving`, `modelbooster`, `autoscaler`. "+
-		"If empty, all controllers are enabled.")
+	pflag.StringSliceVar(&controllers, "controllers", []string{"*"}, "A list of controllers to enable. '*' enables all controllers, 'foo' enables the controller "+
+		"named 'foo', '-foo' disables the controller named 'foo'.\nIf both '+foo' and '-foo' are set simultaneously, then controller named 'foo' will be enabled.\nAll controllers: 'modelserving', 'modelbooster', 'autoscaler'")
 	pflag.Parse()
 
 	cc.Controllers = parseControllers(controllers)
@@ -245,7 +245,7 @@ func waitForCertsReady(keyFile, CertFile string) bool {
 	}
 }
 
-func parseControllers(controllers string) map[string]bool {
+func parseControllers(controllers []string) map[string]bool {
 	// defaultControllers defines all available controllers as enabled
 	defaultControllers := map[string]bool{
 		controller.ModelServingController: true,
@@ -253,43 +253,59 @@ func parseControllers(controllers string) map[string]bool {
 		controller.AutoscalerController:   true,
 	}
 
-	// check for wildcard "*"
-	if strings.Contains(controllers, "*") {
-		parts := strings.Split(controllers, ",")
-		hasWildcardOnly := len(parts) == 1 && parts[0] == "*"
-		if !hasWildcardOnly {
-			// if "*" is used with other controllers, log a warning and use default configuration
-			klog.Warningf("Invalid controller configuration: when using '*', it must be the only value. Using default configuration (all controllers enabled).")
-		}
-		return defaultControllers
-	}
+	enableControllers := make(map[string]bool)
 
-	controllerList := strings.Split(controllers, ",")
-	hasChangedController := false
-
-	// Initialize resultControllers with all controllers disabled
-	resultControllers := map[string]bool{
-		controller.ModelServingController: false,
-		controller.ModelBoosterController: false,
-		controller.AutoscalerController:   false,
-	}
-
-	for _, ctrl := range controllerList {
-		ctrl = strings.TrimSpace(ctrl)
-
-		if _, ok := resultControllers[ctrl]; ok {
-			resultControllers[ctrl] = true
-			hasChangedController = true
-		} else if ctrl != "" {
-			klog.Warningf("Unknown controller %q specified, available controllers are: modelserving, modelbooster, autoscaler", ctrl)
+	for i := range controllers {
+		controllers[i] = strings.TrimSpace(controllers[i])
+		if controllers[i] == "" {
+			continue
 		}
 	}
 
-	// If no valid controllers were specified, use default configuration
-	if !hasChangedController {
-		klog.Warningf("Invalid controller configuration detected. Using default configuration (all controllers enabled).")
+	for ctrlName := range defaultControllers {
+		// Determine if the controller should be enabled based on user input
+		if isControllerEnabled(ctrlName, controllers) {
+			enableControllers[ctrlName] = true
+		} else {
+			klog.Infof("Controller <%s> is disabled", ctrlName)
+		}
+	}
+
+	if len(enableControllers) == 0 {
+		klog.Warning("No controllers are enabled")
 		return defaultControllers
 	}
 
-	return resultControllers
+	return enableControllers
+}
+
+// isControllerEnabled check if a specified controller enabled or not.
+// If the input controllers starts with a "+name" or "name", it is considered as an explicit inclusion.
+// Otherwise, it is considered as an explicit exclusion.
+func isControllerEnabled(name string, controllers []string) bool {
+	// Because controllers are enabled by default, the default return value is true.
+	hasStar := false
+	// if no explicit inclusion or exclusion, enable all controllers by default
+	if len(controllers) == 0 {
+		return true
+	}
+	for _, ctrl := range controllers {
+		// if we get here, there was an explicit inclusion
+		if ctrl == name {
+			return true
+		}
+		// if we get here, there was an explicit inclusion
+		if ctrl == "+"+name {
+			return true
+		}
+		// if we get here, there was an explicit exclusion
+		if ctrl == "-"+name {
+			return false
+		}
+		if ctrl == "*" {
+			hasStar = true
+		}
+	}
+	// if we get here, there was no explicit inclusion or exclusion
+	return hasStar
 }

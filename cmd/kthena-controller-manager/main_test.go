@@ -27,12 +27,12 @@ import (
 func TestParseControllers(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    string
+		input    []string
 		expected map[string]bool
 	}{
 		{
 			name:  "wildcard_only",
-			input: "*",
+			input: []string{"*"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
@@ -41,7 +41,7 @@ func TestParseControllers(t *testing.T) {
 		},
 		{
 			name:  "wildcard_with_other_controllers",
-			input: "*,modelserving",
+			input: []string{"*", "modelserving"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
@@ -50,43 +50,36 @@ func TestParseControllers(t *testing.T) {
 		},
 		{
 			name:  "single_controller_modelserving",
-			input: "modelserving",
+			input: []string{"modelserving"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
-				controller.ModelBoosterController: false,
-				controller.AutoscalerController:   false,
 			},
 		},
 		{
 			name:  "single_controller_modelbooster",
-			input: "modelbooster",
+			input: []string{"modelbooster"},
 			expected: map[string]bool{
-				controller.ModelServingController: false,
 				controller.ModelBoosterController: true,
-				controller.AutoscalerController:   false,
 			},
 		},
 		{
 			name:  "single_controller_autoscaler",
-			input: "autoscaler",
+			input: []string{"autoscaler"},
 			expected: map[string]bool{
-				controller.ModelServingController: false,
-				controller.ModelBoosterController: false,
-				controller.AutoscalerController:   true,
+				controller.AutoscalerController: true,
 			},
 		},
 		{
 			name:  "multiple_controllers",
-			input: "modelserving,modelbooster",
+			input: []string{"modelserving", "modelbooster"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
-				controller.AutoscalerController:   false,
 			},
 		},
 		{
 			name:  "all_controllers_explicit",
-			input: "modelserving,modelbooster,autoscaler",
+			input: []string{"modelserving", "modelbooster", "autoscaler"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
@@ -95,16 +88,15 @@ func TestParseControllers(t *testing.T) {
 		},
 		{
 			name:  "controllers_with_spaces",
-			input: " modelserving , modelbooster ",
+			input: []string{" modelserving ", " modelbooster "},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
-				controller.AutoscalerController:   false,
 			},
 		},
 		{
 			name:  "invalid_controller_name",
-			input: "invalid",
+			input: []string{"invalid"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
@@ -113,25 +105,14 @@ func TestParseControllers(t *testing.T) {
 		},
 		{
 			name:  "mixed_valid_and_invalid_controllers",
-			input: "modelserving,invalid",
+			input: []string{"modelserving", "invalid"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
-				controller.ModelBoosterController: false,
-				controller.AutoscalerController:   false,
-			},
-		},
-		{
-			name:  "empty_string",
-			input: "",
-			expected: map[string]bool{
-				controller.ModelServingController: true,
-				controller.ModelBoosterController: true,
-				controller.AutoscalerController:   true,
 			},
 		},
 		{
 			name:  "only_commas",
-			input: ",,",
+			input: []string{",,"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
@@ -140,7 +121,7 @@ func TestParseControllers(t *testing.T) {
 		},
 		{
 			name:  "invalid_with_no_valid_controllers",
-			input: "invalid1,invalid2",
+			input: []string{"invalid1", "invalid2"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
@@ -149,16 +130,14 @@ func TestParseControllers(t *testing.T) {
 		},
 		{
 			name:  "duplicate_valid_controllers",
-			input: "modelserving,modelserving",
+			input: []string{"modelserving", "modelserving"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
-				controller.ModelBoosterController: false,
-				controller.AutoscalerController:   false,
 			},
 		},
 		{
 			name:  "invalid_controller",
-			input: "*modelserving",
+			input: []string{"*modelserving"},
 			expected: map[string]bool{
 				controller.ModelServingController: true,
 				controller.ModelBoosterController: true,
