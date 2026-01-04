@@ -407,12 +407,53 @@ func TestModelRouteSubset(t *testing.T) {
 				(strings.Contains(resp.Body, "DeepSeek-R1-Distill-Qwen-1.5B-v1") || strings.Contains(resp.Body, "DeepSeek-R1-Distill-Qwen-1.5B-v2"))
 		}, 1*time.Minute, 2*time.Second, "ModelRoute update should propagate and requests should route successfully")
 
-		// Verify requests still work (should normalize weights internally)
-		resp := utils.CheckChatCompletions(t, modelRoute.Spec.ModelName, messages)
-		assert.Equal(t, 200, resp.StatusCode)
-		assert.NotEmpty(t, resp.Body)
-		assert.True(t, strings.Contains(resp.Body, "DeepSeek-R1-Distill-Qwen-1.5B-v1") || strings.Contains(resp.Body, "DeepSeek-R1-Distill-Qwen-1.5B-v2"),
-			"Request should still route to one of the ModelServers when weight sum is not 100%")
+		// Verify requests still work and verify the normalized weight distribution (50:30 = 5/8:3/8)
+		// Send multiple requests to verify weight distribution statistics
+		const totalRequests = 500
+		v1Count := 0
+		v2Count := 0
+
+		for i := 0; i < totalRequests; i++ {
+			resp := utils.CheckChatCompletions(t, modelRoute.Spec.ModelName, messages)
+			assert.Equal(t, 200, resp.StatusCode)
+			assert.NotEmpty(t, resp.Body)
+
+			if strings.Contains(resp.Body, "DeepSeek-R1-Distill-Qwen-1.5B-v1") {
+				v1Count++
+			} else if strings.Contains(resp.Body, "DeepSeek-R1-Distill-Qwen-1.5B-v2") {
+				v2Count++
+			}
+		}
+
+		// Verify weight distribution statistics
+		totalCounted := v1Count + v2Count
+		assert.Equal(t, totalRequests, totalCounted, "All requests should be accounted for in statistics")
+
+		// Calculate and verify distribution ratios (50:30 should normalize to 5/8:3/8 = 62.5%:37.5%)
+		v1Ratio := float64(v1Count) / float64(totalRequests)
+		v2Ratio := float64(v2Count) / float64(totalRequests)
+		expectedV1Ratio := 0.625 // 5/8 = 62.5%
+		expectedV2Ratio := 0.375 // 3/8 = 37.5%
+		maxDeviation := 0.05     // Allow ±5% deviation for randomness
+
+		// Verify weight distribution matches expected normalized ratio (5/8:3/8)
+		assert.GreaterOrEqual(t, v1Ratio, expectedV1Ratio-maxDeviation,
+			"deepseek-r1-1-5b-v1 ratio should be at least %.1f%% (expected %.1f%%)", (expectedV1Ratio-maxDeviation)*100, expectedV1Ratio*100)
+		assert.LessOrEqual(t, v1Ratio, expectedV1Ratio+maxDeviation,
+			"deepseek-r1-1-5b-v1 ratio should be at most %.1f%% (expected %.1f%%)", (expectedV1Ratio+maxDeviation)*100, expectedV1Ratio*100)
+		assert.GreaterOrEqual(t, v2Ratio, expectedV2Ratio-maxDeviation,
+			"deepseek-r1-1-5b-v2 ratio should be at least %.1f%% (expected %.1f%%)", (expectedV2Ratio-maxDeviation)*100, expectedV2Ratio*100)
+		assert.LessOrEqual(t, v2Ratio, expectedV2Ratio+maxDeviation,
+			"deepseek-r1-1-5b-v2 ratio should be at most %.1f%% (expected %.1f%%)", (expectedV2Ratio+maxDeviation)*100, expectedV2Ratio*100)
+
+		// Verify statistics sum to 100%
+		assert.Equal(t, 1.0, v1Ratio+v2Ratio, "Distribution ratios should sum to exactly 100%")
+
+		// Log statistics for debugging
+		t.Logf("Normalized weight distribution verified (50:30 -> 5/8:3/8):")
+		t.Logf("  Total requests: %d, Counted: %d", totalRequests, totalCounted)
+		t.Logf("  deepseek-r1-1-5b-v1: %d requests (%.1f%%, expected %.1f%%)", v1Count, v1Ratio*100, expectedV1Ratio*100)
+		t.Logf("  deepseek-r1-1-5b-v2: %d requests (%.1f%%, expected %.1f%%)", v2Count, v2Ratio*100, expectedV2Ratio*100)
 
 		// Restore original weights - re-fetch to avoid conflict
 		updatedModelRoute, err = testCtx.KthenaClient.NetworkingV1alpha1().ModelRoutes(testNamespace).Get(ctx, createdModelRoute.Name, metav1.GetOptions{})
