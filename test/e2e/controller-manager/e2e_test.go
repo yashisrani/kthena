@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,6 +164,9 @@ func TestModelBoosterValidation(t *testing.T) {
 	require.Error(t, err, "Expected validation error for invalid ModelBooster")
 	// Check that the error is a validation error (admission webhook rejection)
 	// Typically the error message contains "admission webhook" or "validation failed"
+	errorMsg := err.Error()
+	assert.True(t, strings.Contains(errorMsg, "minReplicas cannot be greater than maxReplicas"),
+		"Error should contain specific validation message, got: %v", errorMsg)
 	t.Logf("Validation error (expected): %v", err)
 }
 
@@ -180,6 +184,10 @@ func TestAutoscalingPolicyValidation(t *testing.T) {
 		DryRun: []string{"All"},
 	})
 	require.Error(t, err, "Expected validation error for invalid AutoscalingPolicy")
+	// Check that the error is a validation error (admission webhook rejection)
+	errorMsg := err.Error()
+	assert.True(t, strings.Contains(errorMsg, "duplicate metric name"),
+		"Error should contain specific validation message, got: %v", errorMsg)
 	t.Logf("Validation error (expected): %v", err)
 }
 
@@ -249,6 +257,11 @@ func TestModelServingValidation(t *testing.T) {
 	})
 	require.Error(t, err, "Expected validation error for invalid ModelServing")
 	// Check that the error is a validation error (admission webhook rejection)
+	errorMsg := err.Error()
+	// This error typically comes from CRD validation since there's no custom webhook for ModelServing
+	assert.True(t, strings.Contains(errorMsg, "should be greater than or equal to 0") ||
+		strings.Contains(errorMsg, "Invalid value"),
+		"Error should contain specific validation message, got: %v", errorMsg)
 	t.Logf("Validation error (expected): %v", err)
 }
 
