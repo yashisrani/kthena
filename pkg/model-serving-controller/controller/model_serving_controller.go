@@ -151,6 +151,12 @@ func NewModelServingController(kubeClientSet kubernetes.Interface, modelServingC
 		},
 	})
 
+	_, _ = c.servicesInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(obj interface{}) {
+			c.deleteService(obj)
+		},
+	})
+
 	c.syncHandler = c.syncModelServing
 
 	return c, nil
@@ -337,6 +343,44 @@ func (c *ModelServingController) deletePod(obj interface{}) {
 	}
 }
 
+func (c *ModelServingController) deleteService(obj interface{}) {
+	svc, ok := obj.(*corev1.Service)
+	if !ok {
+		// If the object is not a Service, it might be a tombstone object.
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			klog.Error("failed to parse service type when deleteService")
+			return
+		}
+		svc, ok = tombstone.Obj.(*corev1.Service)
+		if !ok {
+			klog.Errorf("failed to parse Service from tombstone %#v", tombstone.Obj)
+			return
+		}
+	}
+
+	// Get the ModelServing name from the service owner reference
+	var modelServingName string
+	foundOwner := false
+	for _, ownerRef := range svc.GetOwnerReferences() {
+		if ownerRef.APIVersion == workloadv1alpha1.SchemeGroupVersion.String() && ownerRef.Kind == "ModelServing" {
+			modelServingName = ownerRef.Name
+			foundOwner = true
+			break
+		}
+	}
+
+	if !foundOwner {
+		// This service is not owned by ModelServing controller
+		return
+	}
+
+	klog.V(4).Infof("Service %s/%s deleted, enqueuing ModelServing %s for reconcile", svc.GetNamespace(), svc.GetName(), modelServingName)
+
+	miKey := fmt.Sprintf("%s/%s", svc.GetNamespace(), modelServingName)
+	c.workqueue.Add(miKey)
+}
+
 func (c *ModelServingController) enqueueModelServing(mi *workloadv1alpha1.ModelServing) {
 	var key string
 	var err error
@@ -401,6 +445,10 @@ func (c *ModelServingController) syncModelServing(ctx context.Context, key strin
 
 	if err := c.manageServingGroupRollingUpdate(ctx, mi, revision); err != nil {
 		return fmt.Errorf("cannot manage ServingGroup rollingUpdate: %v", err)
+	}
+
+	if err := c.manageHeadlessService(ctx, mi); err != nil {
+		return fmt.Errorf("cannot manage ModelServing: %v", err)
 	}
 
 	if err := c.UpdateModelServingStatus(mi, revision); err != nil {
@@ -1132,6 +1180,44 @@ func (c *ModelServingController) scaleDownServingGroups(ctx context.Context, mi 
 	return nil
 }
 
+func (c *ModelServingController) manageHeadlessService(ctx context.Context, mi *workloadv1alpha1.ModelServing) error {
+	servingGroups, err := c.store.GetServingGroupByModelServing(utils.GetNamespaceName(mi))
+	if err != nil && !errors.Is(err, datastore.ErrServingGroupNotFound) {
+		return fmt.Errorf("cannot get servingGroups: %v", err)
+	}
+
+	for _, sg := range servingGroups {
+		for _, role := range mi.Spec.Template.Roles {
+			roleList, err := c.store.GetRoleList(utils.GetNamespaceName(mi), sg.Name, role.Name)
+			if err != nil {
+				continue
+			}
+
+			for _, roleObj := range roleList {
+				serviceSelector := map[string]string{
+					workloadv1alpha1.GroupNameLabelKey: sg.Name,
+					workloadv1alpha1.RoleLabelKey:      role.Name,
+					workloadv1alpha1.RoleIDKey:         roleObj.Name,
+				}
+
+				services, err := c.getServicesByIndex(RoleIDKey, fmt.Sprintf("%s/%s/%s/%s", mi.Namespace, sg.Name, role.Name, roleObj.Name))
+				if err != nil {
+					continue
+				}
+
+				if len(services) == 0 && role.WorkerTemplate != nil {
+					_, roleIndex := utils.GetParentNameAndOrdinal(roleObj.Name)
+					if err := utils.CreateHeadlessService(ctx, c.kubeClientSet, mi, serviceSelector, sg.Name, role.Name, roleIndex); err != nil {
+						klog.Errorf("failed to create service for role %s in serving group %s: %v", roleObj.Name, sg.Name, err)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 func (c *ModelServingController) CreatePodsForServingGroup(ctx context.Context, mi *workloadv1alpha1.ModelServing, servingGroupIndex int, revision string) error {
 	servingGroupName := utils.GenerateServingGroupName(mi.Name, servingGroupIndex)
 	for _, role := range mi.Spec.Template.Roles {
@@ -1156,18 +1242,6 @@ func (c *ModelServingController) CreatePodsByRole(ctx context.Context, role work
 	_, err := c.kubeClientSet.CoreV1().Pods(mi.Namespace).Create(ctx, entryPod, metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create entry pod %s: %v", entryPod.Name, err)
-	}
-
-	serviceSelector := map[string]string{
-		workloadv1alpha1.GroupNameLabelKey: servingGroupName,
-		workloadv1alpha1.RoleLabelKey:      role.Name,
-		workloadv1alpha1.RoleIDKey:         utils.GenerateRoleID(role.Name, roleIndex),
-		workloadv1alpha1.EntryLabelKey:     utils.Entry,
-	}
-	if role.WorkerTemplate != nil {
-		if err := utils.CreateHeadlessService(ctx, c.kubeClientSet, mi, serviceSelector, servingGroupName, role.Name, roleIndex); err != nil {
-			return fmt.Errorf("failed to create headless service: %v", err)
-		}
 	}
 
 	for i := 1; i <= int(role.WorkerReplicas); i++ {
