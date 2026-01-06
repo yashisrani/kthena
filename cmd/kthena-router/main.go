@@ -54,6 +54,11 @@ func main() {
 	)
 
 	klog.InitFlags(nil)
+	// Some dependencies may install a backing logr logger into klog via init().
+	// That can cause V(...) logs to be filtered by that logger's own verbosity
+	// rules (which are not necessarily controlled by klog's -v/--v).
+	// Clear it here so klog verbosity works as expected for this binary.
+	klog.ClearLogger()
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.StringVar(&routerPort, "port", "8080", "Server listen port")
 	pflag.StringVar(&tlsCert, "tls-cert", "", "TLS certificate file path")
