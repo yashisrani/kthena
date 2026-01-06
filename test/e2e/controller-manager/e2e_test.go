@@ -37,7 +37,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/utils/ptr"
 )
 
 var (
@@ -205,7 +204,7 @@ func TestAutoscalingPolicyBindingValidation(t *testing.T) {
 	ctx, kthenaClient := setupControllerManagerE2ETest(t)
 
 	// Create a binding referencing a non-existent policy (with DryRun)
-	binding := createValidAutoscalingPolicyBinding("non-existent-policy")
+	binding := createTestAutoscalingPolicyBinding("non-existent-policy")
 	_, err := kthenaClient.WorkloadV1alpha1().AutoscalingPolicyBindings(testNamespace).Create(ctx, binding, metav1.CreateOptions{
 		DryRun: []string{"All"},
 	})
@@ -378,52 +377,10 @@ func createAutoscalingPolicyWithEmptyBehavior() *workload.AutoscalingPolicy {
 	}
 }
 
-func createValidAutoscalingPolicy() *workload.AutoscalingPolicy {
-	return &workload.AutoscalingPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "valid-policy",
-			Namespace: testNamespace,
-		},
-		Spec: workload.AutoscalingPolicySpec{
-			TolerancePercent: 10,
-			Metrics: []workload.AutoscalingPolicyMetric{
-				{
-					MetricName:  "cpu",
-					TargetValue: resource.MustParse("100m"),
-				},
-			},
-			Behavior: workload.AutoscalingPolicyBehavior{
-				ScaleDown: workload.AutoscalingPolicyStablePolicy{
-					Instances:           ptr.To(int32(0)),
-					Percent:             ptr.To(int32(100)),
-					Period:              &metav1.Duration{Duration: time.Minute},
-					SelectPolicy:        workload.SelectPolicyOr,
-					StabilizationWindow: &metav1.Duration{Duration: 5 * time.Minute},
-				},
-				ScaleUp: workload.AutoscalingPolicyScaleUpPolicy{
-					StablePolicy: workload.AutoscalingPolicyStablePolicy{
-						Instances:           ptr.To(int32(4)),
-						Percent:             ptr.To(int32(100)),
-						Period:              &metav1.Duration{Duration: time.Minute},
-						SelectPolicy:        workload.SelectPolicyOr,
-						StabilizationWindow: &metav1.Duration{Duration: 0},
-					},
-					PanicPolicy: workload.AutoscalingPolicyPanicPolicy{
-						Percent:               ptr.To(int32(0)),
-						Period:                metav1.Duration{Duration: 0},
-						PanicThresholdPercent: ptr.To(int32(200)),
-						PanicModeHold:         &metav1.Duration{Duration: 0},
-					},
-				},
-			},
-		},
-	}
-}
-
-func createValidAutoscalingPolicyBinding(policyName string) *workload.AutoscalingPolicyBinding {
+func createTestAutoscalingPolicyBinding(policyName string) *workload.AutoscalingPolicyBinding {
 	return &workload.AutoscalingPolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "valid-binding",
+			Name:      "test-binding",
 			Namespace: testNamespace,
 		},
 		Spec: workload.AutoscalingPolicyBindingSpec{
