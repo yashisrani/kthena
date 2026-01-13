@@ -27,8 +27,12 @@ Together they enable fast root-cause analysis, performance tuning, capacity plan
 
 ### Endpoint
 
-- **Port**: `15000`
-- **Path**: `/metrics` (Prometheus text format)
+- **Metrics Port**: `8080` (default)  
+- **Metrics Path**: `/metrics`  
+- **Debug & Admin Port**: `15000` (debug endpoints, config dumps, etc.)
+
+**Note:** The Prometheus metrics are exposed on port **8080** by default.  
+The debug endpoints (`/debug/config_dump/*`) are served on port **15000**.
 
 ### Core Request & Latency Metrics
 
@@ -90,11 +94,38 @@ Together they enable fast root-cause analysis, performance tuning, capacity plan
 
 ## Configuration
 
+Observability features are configured via the Kthena Router's deployment or ConfigMap.  
+Most settings are controlled through environment variables or the router's configuration file (depending on your deployment method).
+
+### Access Log Configuration
+
 ```yaml
 accessLogger:
   enabled: true
   format: "json"          # "json" (strongly recommended) or "text"
   output: "stdout"        # "stdout", "stderr", or file path
+```
+
+#### Equivalent environment variables (recommended for most deployments)
+
+```yaml
+env:
+- name: ACCESS_LOG_ENABLED
+  value: "true"
+- name: ACCESS_LOG_FORMAT
+  value: "json"
+- name: ACCESS_LOG_OUTPUT
+  value: "stdout"
+```
+
+#### Metrics Configuration
+
+```yaml
+observability:
+  metrics:
+    enabled: true
+    port: 8080           # Default metrics port
+    path: /metrics
 ```
 
 ## Debug Endpoints
@@ -112,15 +143,29 @@ All available on the same `:15000` port
 ## Quick Start – Observability in Action
 
 ```bash
-# Forward the metrics/debug port
+# Forward metrics port (8080)
+kubectl port-forward -n kthena-system svc/kthena-router 8080:8080 &
+
+# Forward debug port (15000) when needed
 kubectl port-forward -n kthena-system svc/kthena-router 15000:15000 &
 
 # Watch real-time request rate by model
-watch -n 2 'curl -s http://localhost:15000/metrics | grep kthena_router_requests_total | sort'
+watch -n 2 'curl -s http://localhost:8080/metrics | grep kthena_router_requests_total | sort'
 
-# Tail structured logs
-kubectl logs -n kthena-system deployment/kthena-router -f | jq .
+# Tail logs and filter access log entries (JSON lines only)
+kubectl logs -n kthena-system deployment/kthena-router -f \
+  | grep -E '^{.*}$' | jq .    # Only process valid JSON lines
+
+# Alternative: look for model-related entries in all logs
+kubectl logs -n kthena-system deployment/kthena-router -f \
+  | grep -E "model_name|request_id|duration_total"
 ```
+
+**Important note about logs**  
+
+- Router logs usually contain both regular application logs (plain text) and structured access logs (JSON).  
+- Piping everything directly to `jq` will cause errors on non-JSON lines.  
+- Use `grep` to filter JSON lines first, or use a log processor (like fluentd, vector, or loki) in production.
 
 ## Troubleshooting Guide
 
