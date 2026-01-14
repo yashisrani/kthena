@@ -195,35 +195,25 @@ func (c *GatewayController) updateGatewayStatus(gateway *gatewayv1.Gateway) erro
 	c.setGatewayCondition(gateway, programmedCond)
 
 	// Update listener status
-	gateway.Status.Listeners = make([]gatewayv1.ListenerStatus, len(gateway.Spec.Listeners))
-	for i, listener := range gateway.Spec.Listeners {
-		gateway.Status.Listeners[i] = gatewayv1.ListenerStatus{
-			Name: listener.Name,
-			Conditions: []metav1.Condition{
-				{
-					Type:               string(gatewayv1.ListenerConditionAccepted),
-					Status:             metav1.ConditionTrue,
-					Reason:             string(gatewayv1.ListenerReasonAccepted),
-					Message:            "Listener has been accepted",
-					LastTransitionTime: metav1.Now(),
-					ObservedGeneration: gateway.Generation,
-				},
-				{
-					Type:               string(gatewayv1.ListenerConditionProgrammed),
-					Status:             metav1.ConditionTrue,
-					Reason:             string(gatewayv1.ListenerReasonProgrammed),
-					Message:            "Listener has been programmed",
-					LastTransitionTime: metav1.Now(),
-					ObservedGeneration: gateway.Generation,
-				},
+	for _, listener := range gateway.Spec.Listeners {
+		c.setGatewayListenerStatus(gateway, listener.Name, []metav1.Condition{
+			{
+				Type:               string(gatewayv1.ListenerConditionAccepted),
+				Status:             metav1.ConditionTrue,
+				Reason:             string(gatewayv1.ListenerReasonAccepted),
+				Message:            "Listener has been accepted",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: gateway.Generation,
 			},
-			SupportedKinds: []gatewayv1.RouteGroupKind{
-				{
-					Group: (*gatewayv1.Group)(&gatewayv1.GroupVersion.Group),
-					Kind:  gatewayv1.Kind("HTTPRoute"),
-				},
+			{
+				Type:               string(gatewayv1.ListenerConditionProgrammed),
+				Status:             metav1.ConditionTrue,
+				Reason:             string(gatewayv1.ListenerReasonProgrammed),
+				Message:            "Listener has been programmed",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: gateway.Generation,
 			},
-		}
+		})
 	}
 
 	_, err := c.gatewayClient.GatewayV1().Gateways(gateway.Namespace).UpdateStatus(context.TODO(), gateway, metav1.UpdateOptions{})
@@ -241,6 +231,47 @@ func (c *GatewayController) setGatewayCondition(gateway *gatewayv1.Gateway, newC
 		}
 	}
 	gateway.Status.Conditions = append(gateway.Status.Conditions, newCond)
+}
+
+func (c *GatewayController) setGatewayListenerStatus(gateway *gatewayv1.Gateway, listenerName gatewayv1.SectionName, conditions []metav1.Condition) {
+	var listenerStatus *gatewayv1.ListenerStatus
+	for i := range gateway.Status.Listeners {
+		if gateway.Status.Listeners[i].Name == listenerName {
+			listenerStatus = &gateway.Status.Listeners[i]
+			break
+		}
+	}
+
+	if listenerStatus == nil {
+		gateway.Status.Listeners = append(gateway.Status.Listeners, gatewayv1.ListenerStatus{
+			Name: listenerName,
+			SupportedKinds: []gatewayv1.RouteGroupKind{
+				{
+					Group: (*gatewayv1.Group)(&gatewayv1.GroupVersion.Group),
+					Kind:  gatewayv1.Kind("HTTPRoute"),
+				},
+			},
+		})
+		listenerStatus = &gateway.Status.Listeners[len(gateway.Status.Listeners)-1]
+	}
+
+	// Update conditions
+	for _, newCond := range conditions {
+		found := false
+		for i, cond := range listenerStatus.Conditions {
+			if cond.Type == newCond.Type {
+				if cond.Status == newCond.Status && cond.Reason == newCond.Reason {
+					newCond.LastTransitionTime = cond.LastTransitionTime
+				}
+				listenerStatus.Conditions[i] = newCond
+				found = true
+				break
+			}
+		}
+		if !found {
+			listenerStatus.Conditions = append(listenerStatus.Conditions, newCond)
+		}
+	}
 }
 
 func (c *GatewayController) enqueueGateway(obj interface{}) {
