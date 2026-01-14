@@ -172,23 +172,7 @@ func (c *InferencePoolController) updateInferencePoolStatus(inferencePool *infer
 	// For now, we'll maintain a generic parent status if it's referenced by any HTTPRoute.
 	// This is a simplified implementation.
 
-	acceptedCond := metav1.Condition{
-		Type:               "Accepted",
-		Status:             metav1.ConditionTrue,
-		Reason:             "Accepted",
-		Message:            "InferencePool has been accepted by kthena-router",
-		LastTransitionTime: metav1.Now(),
-		ObservedGeneration: inferencePool.Generation,
-	}
-
-	// We don't easily have the parent Gateway here, so we skip adding parents for now
-	// but we could implement a logic to find them from the store.
-	// To satisfy the lint and provide some status, we'll just ensure the object is updated.
-	
-	// If the user wants specific fields, we can add a dummy parent or find real ones.
 	// For now, let's just update the object to trigger any observers.
-
-	_ = acceptedCond
 
 	// Convert back to unstructured to update status
 	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(inferencePool)
@@ -200,37 +184,6 @@ func (c *InferencePoolController) updateInferencePoolStatus(inferencePool *infer
 	gvr := inferencev1.SchemeGroupVersion.WithResource("inferencepools")
 	_, err = c.dynamicClient.Resource(gvr).Namespace(inferencePool.Namespace).UpdateStatus(context.TODO(), unstructuredObj, metav1.UpdateOptions{})
 	return err
-}
-
-func (c *InferencePoolController) setInferencePoolCondition(inferencePool *inferencev1.InferencePool, parentRef inferencev1.ParentReference, newCond metav1.Condition) {
-	// Find or create parent status
-	var parentStatus *inferencev1.ParentStatus
-	for i := range inferencePool.Status.Parents {
-		if inferencePool.Status.Parents[i].ParentRef.Name == parentRef.Name {
-			parentStatus = &inferencePool.Status.Parents[i]
-			break
-		}
-	}
-
-	if parentStatus == nil {
-		inferencePool.Status.Parents = append(inferencePool.Status.Parents, inferencev1.ParentStatus{
-			ParentRef:      parentRef,
-			ControllerName: inferencev1.ControllerName(ControllerName),
-		})
-		parentStatus = &inferencePool.Status.Parents[len(inferencePool.Status.Parents)-1]
-	}
-
-	// Update conditions in parent status
-	for i, cond := range parentStatus.Conditions {
-		if cond.Type == newCond.Type {
-			if cond.Status == newCond.Status && cond.Reason == newCond.Reason {
-				newCond.LastTransitionTime = cond.LastTransitionTime
-			}
-			parentStatus.Conditions[i] = newCond
-			return
-		}
-	}
-	parentStatus.Conditions = append(parentStatus.Conditions, newCond)
 }
 
 func (c *InferencePoolController) enqueueInferencePool(obj interface{}) {
