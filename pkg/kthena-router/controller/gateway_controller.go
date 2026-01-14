@@ -17,17 +17,20 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayclientset "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gatewayinformers "sigs.k8s.io/gateway-api/pkg/client/informers/externalversions"
 	gatewaylisters "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1"
 
@@ -35,6 +38,7 @@ import (
 )
 
 type GatewayController struct {
+	gatewayClient gatewayclientset.Interface
 	gatewayLister gatewaylisters.GatewayLister
 	gatewaySynced cache.InformerSynced
 	registration  cache.ResourceEventHandlerRegistration
@@ -45,12 +49,14 @@ type GatewayController struct {
 }
 
 func NewGatewayController(
+	gatewayClient gatewayclientset.Interface,
 	gatewayInformerFactory gatewayinformers.SharedInformerFactory,
 	store datastore.Store,
 ) *GatewayController {
 	gatewayInformer := gatewayInformerFactory.Gateway().V1().Gateways()
 
 	controller := &GatewayController{
+		gatewayClient: gatewayClient,
 		gatewayLister: gatewayInformer.Lister(),
 		gatewaySynced: gatewayInformer.Informer().HasSynced,
 		workqueue:     workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any]()),
@@ -160,7 +166,81 @@ func (c *GatewayController) syncHandler(key string) error {
 		return err
 	}
 
-	return nil
+	return c.updateGatewayStatus(gateway)
+}
+
+func (c *GatewayController) updateGatewayStatus(gateway *gatewayv1.Gateway) error {
+	gateway = gateway.DeepCopy()
+
+	// Update conditions
+	acceptedCond := metav1.Condition{
+		Type:               string(gatewayv1.GatewayConditionAccepted),
+		Status:             metav1.ConditionTrue,
+		Reason:             string(gatewayv1.GatewayReasonAccepted),
+		Message:            "Gateway has been accepted by kthena-router",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: gateway.Generation,
+	}
+
+	programmedCond := metav1.Condition{
+		Type:               string(gatewayv1.GatewayConditionProgrammed),
+		Status:             metav1.ConditionTrue,
+		Reason:             string(gatewayv1.GatewayReasonProgrammed),
+		Message:            "Gateway has been programmed by kthena-router",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: gateway.Generation,
+	}
+
+	c.setGatewayCondition(gateway, acceptedCond)
+	c.setGatewayCondition(gateway, programmedCond)
+
+	// Update listener status
+	gateway.Status.Listeners = make([]gatewayv1.ListenerStatus, len(gateway.Spec.Listeners))
+	for i, listener := range gateway.Spec.Listeners {
+		gateway.Status.Listeners[i] = gatewayv1.ListenerStatus{
+			Name: listener.Name,
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(gatewayv1.ListenerConditionAccepted),
+					Status:             metav1.ConditionTrue,
+					Reason:             string(gatewayv1.ListenerReasonAccepted),
+					Message:            "Listener has been accepted",
+					LastTransitionTime: metav1.Now(),
+					ObservedGeneration: gateway.Generation,
+				},
+				{
+					Type:               string(gatewayv1.ListenerConditionProgrammed),
+					Status:             metav1.ConditionTrue,
+					Reason:             string(gatewayv1.ListenerReasonProgrammed),
+					Message:            "Listener has been programmed",
+					LastTransitionTime: metav1.Now(),
+					ObservedGeneration: gateway.Generation,
+				},
+			},
+			SupportedKinds: []gatewayv1.RouteGroupKind{
+				{
+					Group: (*gatewayv1.Group)(&gatewayv1.GroupVersion.Group),
+					Kind:  gatewayv1.Kind("HTTPRoute"),
+				},
+			},
+		}
+	}
+
+	_, err := c.gatewayClient.GatewayV1().Gateways(gateway.Namespace).UpdateStatus(context.TODO(), gateway, metav1.UpdateOptions{})
+	return err
+}
+
+func (c *GatewayController) setGatewayCondition(gateway *gatewayv1.Gateway, newCond metav1.Condition) {
+	for i, cond := range gateway.Status.Conditions {
+		if cond.Type == newCond.Type {
+			if cond.Status == newCond.Status && cond.Reason == newCond.Reason {
+				newCond.LastTransitionTime = cond.LastTransitionTime
+			}
+			gateway.Status.Conditions[i] = newCond
+			return
+		}
+	}
+	gateway.Status.Conditions = append(gateway.Status.Conditions, newCond)
 }
 
 func (c *GatewayController) enqueueGateway(obj interface{}) {
