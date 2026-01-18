@@ -195,21 +195,42 @@ func (c *GatewayController) updateGatewayStatus(gateway *gatewayv1.Gateway) erro
 	c.setGatewayCondition(gateway, programmedCond)
 
 	// Update listener status
+	gatewayKey := fmt.Sprintf("%s/%s", gateway.Namespace, gateway.Name)
 	for _, listener := range gateway.Spec.Listeners {
+		listenerErr := c.store.GetListenerStatus(gatewayKey, string(listener.Name))
+
+		acceptedStatus := metav1.ConditionTrue
+		acceptedReason := string(gatewayv1.ListenerReasonAccepted)
+		acceptedMessage := "Listener has been accepted"
+
+		programmedStatus := metav1.ConditionTrue
+		programmedReason := string(gatewayv1.ListenerReasonProgrammed)
+		programmedMessage := "Listener has been programmed"
+
+		if listenerErr != nil {
+			acceptedStatus = metav1.ConditionFalse
+			acceptedReason = "PortUnavailable"
+			acceptedMessage = fmt.Sprintf("Failed to start listener: %v", listenerErr)
+
+			programmedStatus = metav1.ConditionFalse
+			programmedReason = "Invalid"
+			programmedMessage = "Listener could not be programmed due to error"
+		}
+
 		c.setGatewayListenerStatus(gateway, listener.Name, []metav1.Condition{
 			{
 				Type:               string(gatewayv1.ListenerConditionAccepted),
-				Status:             metav1.ConditionTrue,
-				Reason:             string(gatewayv1.ListenerReasonAccepted),
-				Message:            "Listener has been accepted",
+				Status:             acceptedStatus,
+				Reason:             acceptedReason,
+				Message:            acceptedMessage,
 				LastTransitionTime: metav1.Now(),
 				ObservedGeneration: gateway.Generation,
 			},
 			{
 				Type:               string(gatewayv1.ListenerConditionProgrammed),
-				Status:             metav1.ConditionTrue,
-				Reason:             string(gatewayv1.ListenerReasonProgrammed),
-				Message:            "Listener has been programmed",
+				Status:             programmedStatus,
+				Reason:             programmedReason,
+				Message:            programmedMessage,
 				LastTransitionTime: metav1.Now(),
 				ObservedGeneration: gateway.Generation,
 			},
